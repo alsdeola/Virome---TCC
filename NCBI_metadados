@@ -1,0 +1,34 @@
+#!/bin/bash
+while read -r host; do
+
+        while read -r virus; do
+                /opt/ncbi-datasets-cli-v16.4.3/datasets \
+                summary \
+                virus \
+                genome \
+                taxon ${virus} --as-json-lines --host ${host} \
+                | /opt/ncbi-datasets-cli-v16.4.3/dataformat \
+                  tsv \
+                  virus-genome | cat > "accession_${virus}_${host}.tsv"
+
+                if [ $(wc -c < "accession_${virus}_${host}.tsv") -eq 0 ]; then
+                        echo "Não foi possível encontrar metadados para o taxon ${virus}, hospedeiro: ${host}"
+                        echo "Não foi possível encontrar metadados para o taxon ${virus}, hospedeiro: ${host}" >> /bruto/DadosBioinfo/Dados_Aluisio/viral_database/resultados_summary/resultados_${host}.txt
+                else
+                        echo "Operação bem-sucedida para o taxon: ${virus} e hospedeiro: ${host}"
+                        echo "Operação bem-sucedida para o taxon: ${virus} e hospedeiro: ${host}" >> /bruto/DadosBioinfo/Dados_Aluisio/viral_database/resultados_summary/resultados_${host}.txt
+                        cat "accession_${virus}_${host}.tsv" >> /bruto/DadosBioinfo/Dados_Aluisio/viral_database/resultados_summary/metadata_${host}.tsv
+                fi
+
+                mv "accession_${virus}_${host}.tsv" /bruto/DadosBioinfo/Dados_Aluisio/viral_database/metadata_seq/
+
+        done < /bruto/DadosBioinfo/Dados_Aluisio/viral_database/taxons/taxons_virus_riboviria.txt
+
+        awk '{print $1}' \
+        /bruto/DadosBioinfo/Dados_Aluisio/viral_database/resultados_summary/metadata_${host}.tsv > /bruto/DadosBioinfo/Dados_Aluisio/viral_database/resultados_summary/accession_only_${host}.txt
+
+        sed -i '/Accession/d' \
+        /bruto/DadosBioinfo/Dados_Aluisio/viral_database/resultados_summary/accession_only_${host}.txt
+
+
+done < /bruto/DadosBioinfo/Dados_Aluisio/viral_database/taxons/host.txt
