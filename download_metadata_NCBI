@@ -1,0 +1,49 @@
+#!/bin/bash
+
+while read -r host; do
+  if [ "$host" != "bacteria" ]; then
+    taxon_file="/bruto/DadosBioinfo/Dados_Aluisio/viral_database/taxons/taxons_virus.txt"
+  elif [ "$host" == "bacteria" ]; then
+    taxon_file="/bruto/DadosBioinfo/Dados_Aluisio/viral_database/taxons/taxons_bacteriofagos.txt"
+  else
+    echo "Host desconhecido: ${host}"
+    continue
+  fi
+
+  while read -r virus; do
+    if [ "$host" != "bacteria" ]; then
+      cmd="/opt/ncbi-datasets-cli-v16.4.3/datasets \
+        summary \
+        virus \
+        genome \
+        taxon ${virus} --as-json-lines --host ${host}"
+    elif [ "$host" == "bacteria" ]; then
+      cmd="/opt/ncbi-datasets-cli-v16.4.3/datasets \
+        summary \
+        virus \
+        genome \
+        taxon ${virus} --as-json-lines"
+    else
+      echo "Host desconhecido: ${host}"
+      continue
+    fi
+
+    $cmd | /opt/ncbi-datasets-cli-v16.4.3/dataformat \
+      tsv \
+      virus-genome | cat > "accession_${virus}_${host}.tsv"
+
+    if [ $(wc -c < "accession_${virus}_${host}.tsv") -eq 0 ]; then
+      echo "Não foi possível encontrar metadados para o taxon ${virus}, hospedeiro: ${host}"
+      echo "Não foi possível encontrar metadados para o taxon ${virus}, hospedeiro: ${host}" >> /bruto/DadosBioinfo/Dados_Aluisio/viral_database/resultados_summary/resultados.txt
+    else
+      echo "Operação bem-sucedida para o taxon: ${virus} e hospedeiro: ${host}"
+      echo "Operação bem-sucedida para o taxon: ${virus} e hospedeiro: ${host}" >> /bruto/DadosBioinfo/Dados_Aluisio/viral_database/resultados_summary/resultados.txt
+      cat "accession_${virus}_${host}.tsv" >> /bruto/DadosBioinfo/Dados_Aluisio/viral_database/resultados_summary/metadata.tsv
+    fi
+
+  done < "$taxon_file"
+
+done < /bruto/DadosBioinfo/Dados_Aluisio/viral_database/taxons/host.txt
+
+awk '{print $1}' /bruto/DadosBioinfo/Dados_Aluisio/viral_database/resultados_summary/metadata.tsv > /bruto/DadosBioinfo/Dados_Aluisio/viral_database/resultados_summary/accession_only.txt
+sed -i '/Accession/d' /bruto/DadosBioinfo/Dados_Aluisio/viral_database/resultados_summary/accession_only.txt
