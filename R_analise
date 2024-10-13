@@ -1,0 +1,121 @@
+#carrega as bibliotecas
+library(dplyr)
+library(vegan)
+library(tibble)
+library(ggplot2)
+library(reshape2)
+
+#####################################################################
+#extrai os arquivos e transforma eles em df##########################
+
+directory <- "C:/Users/aluisio/TCC/kraken2_sample_count"
+tsv_files <- list.files(directory, pattern = "\\.tsv$", full.names = TRUE)
+
+for (file in tsv_files) {
+  df_name <- gsub("\\.tsv$", "", basename(file))
+
+  tryCatch({
+    df <- read.table(file, header = FALSE, sep = "\t", stringsAsFactors = FALSE)
+    assign(df_name, df, envir = .GlobalEnv)
+    message(paste("Loaded:", df_name))
+  }, error = function(e) {
+    message(paste("Error loading:", df_name, ":", e$message))
+  })
+}
+
+dfs <- ls(pattern = "^S_")
+for (df_name in dfs) {
+  df <- get(df_name)  # Obter o data frame pelo nome
+  colnames(df)[1] <- "Quantidade"
+  colnames(df)[2] <- "Tax"
+  assign(df_name, df)  # Salvar as alterações de volta no data frame original
+}
+
+especies_df <- data.frame()
+for (df_name in dfs) {
+  df <- get(df_name)
+  if (nrow(especies_df) == 0) {
+    especies_df <- df
+  } else {
+    especies_df <- full_join(especies_df, df, by = "Tax", suffix = c("", paste0("_", df_name)))
+  }
+}
+
+especies_df <- especies_df[, c(2, 1, 3:ncol(especies_df))]
+especies_df[is.na(especies_df)] <- 0
+rm(df)
+##########################################################################
+##########################################################################
+
+# Agrupar pelas strings antes do primeiro espaço e somar os valores
+especies_df <- especies_df %>%
+  group_by(Tax = sub(" .*", "", Tax)) %>%  # Pegar a parte antes do primeiro espaço
+  summarise(across(starts_with("Quantidade"), sum, .names = "Soma_{.col}"), .groups = 'drop')
+
+especies_df <- especies_df %>%
+  mutate(Tax = ifelse(Tax %in% c("virus", "Bacteriophage", "uncultured"), "Bacteriophage", Tax)) %>%
+  group_by(Tax) %>%
+  summarise(across(everything(), sum, na.rm = TRUE), .groups = 'drop')
+
+especies_df <- as.data.frame(especies_df)
+rownames(especies_df) <- especies_df$Tax
+especies_df$Tax <- NULL
+
+especies_df <- especies_df[rownames(especies_df) != "Bacteriophage", ]
+colnames(especies_df) <- c("Tax","SRR1903880","SRR1903881", "SRR1903882", "SRR1903883", "SRR1903884", "SRR1903885",
+                          "SRR1903886", "SRR1903887", "SRR1903888", "SRR1903889", "SRR1903890", "SRR1903891",
+                          "SRR1903892", "SRR1903893", "SRR1903894", "SRR1903895", "SRR1903896", "SRR1903897",
+                          "SRR1903898", "SRR1903899", "SRR1903900", "SRR1903901", "SRR1903902", "SRR1903903",
+                          "SRR1903904", "SRR1903905", "SRR1903906")
+
+especies_matrix <- as.matrix(especies_df)
+
+
+
+###############################################################
+#Gerar_O_HEATMAP_COM_GGPLOT2###################################
+
+resultado_normalizado <- as.data.frame(lapply(especies_df[-1], function(x) {
+  (x - min(x, na.rm = TRUE)) / (max(x, na.rm = TRUE) - min(x, na.rm = TRUE))
+}))
+
+# Re-adicionando a coluna Tax
+resultado_normalizado$Tax <- especies_df$Tax
+
+# Transformando o data frame para o formato longo
+resultado_melted <- melt(resultado_normalizado, id.vars = "Tax", variable.name = "Amostra", value.name = "Valor")
+
+# Gerando o heatmap com ggplot2
+ggplot(resultado_melted, aes(x = Amostra, y = Tax, fill = Valor)) +
+  geom_tile(color = "white") +  # Adiciona bordas brancas entre os tiles
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0.5) +
+  labs(x = "Amostras", y = "Espécies", title = "Distribuição taxonômica classificada no menor rank") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  
+
+##############################################################
+#Dissimilaridade Bray-Curtis##################################
+
+#Converte para um df
+df_transposed <- as.data.frame(t(especies_df))
+#calcula o MDS baseado na distância bray-curtis
+bray_curtis_matrix <- vegdist(df_transposed, method = "bray")
+nmds_result <- metaMDS(bray_curtis_matrix, k = 2)
+#extrai as distâncias e transforma em um df e adiciona a coluna tratamento
+nmds_points <- as.data.frame(nmds_result$points)
+nmds_points$Tratamento <-  factor(c("F1", "F1", "F1", "F1", "F1", "F1", "F3", 
+                             "F3", "F2", "F2", "F2", "F2", "F2", "F2",
+                             "F1", "F2", "F2", "F2", "F2", "F2",
+                             "F2", "F2", "F2", "F2", "F2", "F1","F1"))
+
+#plota o NMDS
+ggplot(nmds_points, aes(x = MDS1, y = MDS2, color = Tratamento)) +
+  geom_point(size = 4) +                     # Tamanho dos pontos
+  theme_gray() +                          # Tema minimalista
+  geom_text(aes(label = rownames(nmds_points)), vjust = 2, size = 3) +
+  labs(title = "Distância Bray-Curtis",     # Título do gráfico
+       x = "NMDS 1",               # Rótulo do eixo x
+       y = "NMDS 2")               # Rótulo do eixo y
+
+##############################################################
+##############################################################
